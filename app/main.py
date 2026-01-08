@@ -90,33 +90,25 @@ async def whatsapp_webhook(request: Request):
 # ===============================
 # SEND TEMPLATE MESSAGE
 # ===============================
-def send_template(to, template_name, variables):
-    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
-
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": "en"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": v} for v in variables
-                    ]
-                }
-            ]
-        }
-    }
+def send_whatsapp_message(to: str, text: str):
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    requests.post(url, headers=headers, json=payload)
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {
+            "body": text
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+    print(response.text)
 
 # ===============================
 # SEND NORMAL TEXT MESSAGE
