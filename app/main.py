@@ -7,7 +7,7 @@ from app.deps import get_db
 from app.models import Tenant, User, Message, ConversationSession
 
 # =================================================
-# CONFIG (DEMO MODE)
+# CONFIG
 # =================================================
 WHATSAPP_TOKEN = "PASTE_META_ACCESS_TOKEN"
 PHONE_NUMBER_ID = "PASTE_PHONE_NUMBER_ID"
@@ -16,20 +16,20 @@ VERIFY_TOKEN = "verify_123"
 # =================================================
 # APP INIT
 # =================================================
-app = FastAPI(title="Multitenant WhatsApp Chatbot – Grocery Demo")
+app = FastAPI(title="Multitenant WhatsApp Chatbot – Restaurant Demo")
 Base.metadata.create_all(bind=engine)
 
 # =================================================
-# HEALTH CHECK
+# HEALTH
 # =================================================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 # =================================================
-# GROCERY CHAT LOGIC
+# RESTAURANT CHAT LOGIC
 # =================================================
-def process_grocery_chat(phone: str, text: str, tenant: Tenant, db: Session):
+def process_restaurant_chat(phone: str, text: str, tenant: Tenant, db: Session):
 
     text = text.lower()
 
@@ -49,7 +49,7 @@ def process_grocery_chat(phone: str, text: str, tenant: Tenant, db: Session):
         db.commit()
         db.refresh(user)
 
-    # Save incoming message
+    # Save incoming
     db.add(Message(
         tenant_id=tenant.id,
         user_id=user.id,
@@ -75,49 +75,33 @@ def process_grocery_chat(phone: str, text: str, tenant: Tenant, db: Session):
         db.commit()
         db.refresh(session)
 
-    # -------------------------
-    # GROCERY FLOW
-    # -------------------------
+    # -------- RESTAURANT FLOW --------
     if "menu" in text:
-        reply = (
-            "🛒 Grocery Menu:\n"
-            "• Rice – ₹50/kg\n"
-            "• Sugar – ₹40/kg\n"
-            "• Oil – ₹120/litre\n"
-            "\nType item name to know price."
-        )
+        template = "restaurant_menu"
+        params = []
 
-    elif "rice" in text:
-        reply = "Rice costs ₹50 per kg. Type `order rice` to place order."
+    elif text in ["pizza", "burger", "pasta"]:
+        session.context["item"] = text
+        db.commit()
+        template = "restaurant_item_received"
+        params = [text.title()]
 
-    elif "sugar" in text:
-        reply = "Sugar costs ₹40 per kg. Type `order sugar` to place order."
-
-    elif "oil" in text:
-        reply = "Oil costs ₹120 per litre. Type `order oil` to place order."
-
-    elif "order" in text:
-        reply = "✅ Your order has been placed successfully."
+    elif text.startswith("order"):
+        item = session.context.get("item", "item")
+        template = "restaurant_order_confirmed"
+        params = [item.title()]
+        session.state = "idle"
+        session.context = {}
+        db.commit()
 
     else:
-        reply = (
-            "Hello 👋 Welcome to our Grocery Store.\n"
-            "Type `menu` to see available items."
-        )
+        template = "restaurant_welcome"
+        params = []
 
-    # Save outgoing message
-    db.add(Message(
-        tenant_id=tenant.id,
-        user_id=user.id,
-        direction="out",
-        message_text=reply
-    ))
-    db.commit()
-
-    return reply
+    return template, params
 
 # =================================================
-# WEBHOOK VERIFICATION
+# WEBHOOK VERIFY
 # =================================================
 @app.get("/webhook/whatsapp")
 def verify_webhook(
@@ -130,7 +114,7 @@ def verify_webhook(
     return {"error": "verification failed"}
 
 # =================================================
-# WHATSAPP INCOMING MESSAGE
+# WHATSAPP INCOMING
 # =================================================
 @app.post("/webhook/whatsapp")
 async def whatsapp_webhook(request: Request):
@@ -145,36 +129,45 @@ async def whatsapp_webhook(request: Request):
 
     db = next(get_db())
 
-    # DEMO: FIRST TENANT (GROCERY)
+    # DEMO: RESTAURANT TENANT
     tenant = db.query(Tenant).filter(
-        Tenant.domain_type == "grocery"
+        Tenant.domain_type == "restaurant"
     ).first()
 
-    process_grocery_chat(phone, text, tenant, db)
+    template, params = process_restaurant_chat(phone, text, tenant, db)
 
-    send_template_message(phone)
+    send_template(phone, template, params)
 
     return {"status": "sent"}
 
 # =================================================
-# SEND TEMPLATE MESSAGE (META DEMO RULE)
+# SEND TEMPLATE
 # =================================================
-def send_template_message(to: str):
+def send_template(to: str, template_name: str, params: list):
+
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    components = []
+    if params:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in params]
+        })
 
     data = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "template",
         "template": {
-            "name": "hello_world",
-            "language": {"code": "en_US"}
+            "name": template_name,
+            "language": {"code": "en_US"},
+            "components": components
         }
+    }
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
     }
 
     requests.post(url, headers=headers, json=data)
