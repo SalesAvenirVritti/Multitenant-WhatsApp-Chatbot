@@ -1,109 +1,29 @@
 from fastapi import FastAPI, Request
-from sqlalchemy.orm import Session
 import requests
+import os
 
-from app.db import Base, engine
-from app.deps import get_db
-from app.models import Tenant, User, Message, ConversationSession
+app = FastAPI()
 
-# =================================================
-# CONFIG
-# =================================================
-WHATSAPP_TOKEN = "PASTE_META_ACCESS_TOKEN"
-PHONE_NUMBER_ID = "PASTE_PHONE_NUMBER_ID"
+# ===============================
+# CONFIG (REPLACE THESE)
+# ===============================
+WHATSAPP_TOKEN = "PASTE_YOUR_ACCESS_TOKEN_HERE"
+PHONE_NUMBER_ID = "PASTE_PHONE_NUMBER_ID_HERE"
 VERIFY_TOKEN = "verify_123"
 
-# =================================================
-# APP INIT
-# =================================================
-app = FastAPI(title="Multitenant WhatsApp Chatbot – Restaurant Demo")
-Base.metadata.create_all(bind=engine)
+RESTAURANT_NAME = "Food Plaza"
 
-# =================================================
-# HEALTH
-# =================================================
+# ===============================
+# HEALTH CHECK
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# =================================================
-# RESTAURANT CHAT LOGIC
-# =================================================
-def process_restaurant_chat(phone: str, text: str, tenant: Tenant, db: Session):
-
-    text = text.lower()
-
-    # User
-    user = db.query(User).filter(
-        User.phone == phone,
-        User.tenant_id == tenant.id
-    ).first()
-
-    if not user:
-        user = User(
-            tenant_id=tenant.id,
-            phone=phone,
-            name="Guest"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    # Save incoming
-    db.add(Message(
-        tenant_id=tenant.id,
-        user_id=user.id,
-        direction="in",
-        message_text=text
-    ))
-    db.commit()
-
-    # Session
-    session = db.query(ConversationSession).filter(
-        ConversationSession.user_id == user.id,
-        ConversationSession.tenant_id == tenant.id
-    ).first()
-
-    if not session:
-        session = ConversationSession(
-            tenant_id=tenant.id,
-            user_id=user.id,
-            state="idle",
-            context={}
-        )
-        db.add(session)
-        db.commit()
-        db.refresh(session)
-
-    # -------- RESTAURANT FLOW --------
-    if "menu" in text:
-        template = "restaurant_menu"
-        params = []
-
-    elif text in ["pizza", "burger", "pasta"]:
-        session.context["item"] = text
-        db.commit()
-        template = "restaurant_item_received"
-        params = [text.title()]
-
-    elif text.startswith("order"):
-        item = session.context.get("item", "item")
-        template = "restaurant_order_confirmed"
-        params = [item.title()]
-        session.state = "idle"
-        session.context = {}
-        db.commit()
-
-    else:
-        template = "restaurant_welcome"
-        params = []
-
-    return template, params
-
-# =================================================
-# WEBHOOK VERIFY
-# =================================================
-@app.get("/webhook/whatsapp")
+# ===============================
+# WEBHOOK VERIFICATION (META)
+# ===============================
+@app.get("/webhook")
 def verify_webhook(
     hub_mode: str = None,
     hub_challenge: str = None,
@@ -111,57 +31,83 @@ def verify_webhook(
 ):
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         return int(hub_challenge)
-    return {"error": "verification failed"}
+    return {"error": "Verification failed"}
 
-# =================================================
-# WHATSAPP INCOMING
-# =================================================
-@app.post("/webhook/whatsapp")
+# ===============================
+# WEBHOOK RECEIVER
+# ===============================
+@app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    payload = await request.json()
+    data = await request.json()
 
     try:
-        message = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
         phone = message["from"]
-        text = message["text"]["body"]
+        text = message["text"]["body"].strip().upper()
     except Exception:
         return {"status": "ignored"}
 
-    db = next(get_db())
+    # ===============================
+    # BOT LOGIC (DEMO)
+    # ===============================
+    if text == "HI":
+        send_template(
+            phone,
+            "restaurant_welcome",
+            [RESTAURANT_NAME]
+        )
 
-    # DEMO: RESTAURANT TENANT
-    tenant = db.query(Tenant).filter(
-        Tenant.domain_type == "restaurant"
-    ).first()
+    elif text == "MENU":
+        send_template(
+            phone,
+            "restaurant_menu",
+            ["Pizza"]
+        )
 
-    template, params = process_restaurant_chat(phone, text, tenant, db)
+    elif text.startswith("ITEM"):
+        item = text.replace("ITEM", "").strip()
+        send_template(
+            phone,
+            "restaurant_order_confirm",
+            [item]
+        )
 
-    send_template(phone, template, params)
+    elif text.startswith("ORDER"):
+        item = text.replace("ORDER", "").strip()
+        send_text(
+            phone,
+            f"✅ Your order for {item} is confirmed!\nThank you for ordering with {RESTAURANT_NAME} 🍕"
+        )
 
-    return {"status": "sent"}
+    else:
+        send_text(
+            phone,
+            "Please reply:\nHI\nMENU\nITEM Pizza\nORDER Pizza"
+        )
 
-# =================================================
-# SEND TEMPLATE
-# =================================================
-def send_template(to: str, template_name: str, params: list):
+    return {"status": "ok"}
 
+# ===============================
+# SEND TEMPLATE MESSAGE
+# ===============================
+def send_template(to, template_name, variables):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
-    components = []
-    if params:
-        components.append({
-            "type": "body",
-            "parameters": [{"type": "text", "text": p} for p in params]
-        })
-
-    data = {
+    payload = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "template",
         "template": {
             "name": template_name,
-            "language": {"code": "en_US"},
-            "components": components
+            "language": {"code": "en"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": v} for v in variables
+                    ]
+                }
+            ]
         }
     }
 
@@ -170,4 +116,170 @@ def send_template(to: str, template_name: str, params: list):
         "Content-Type": "application/json"
     }
 
-    requests.post(url, headers=headers, json=data)
+    requests.post(url, headers=headers, json=payload)
+
+# ===============================
+# SEND NORMAL TEXT MESSAGE
+# ===============================
+def send_text(to, text):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    requests.post(url, headers=headers, json=payload)
+from fastapi import FastAPI, Request
+import requests
+import os
+
+app = FastAPI()
+
+# ===============================
+# CONFIG (REPLACE THESE)
+# ===============================
+WHATSAPP_TOKEN = "PASTE_YOUR_ACCESS_TOKEN_HERE"
+PHONE_NUMBER_ID = "PASTE_PHONE_NUMBER_ID_HERE"
+VERIFY_TOKEN = "verify_123"
+
+RESTAURANT_NAME = "Food Plaza"
+
+# ===============================
+# HEALTH CHECK
+# ===============================
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+# ===============================
+# WEBHOOK VERIFICATION (META)
+# ===============================
+@app.get("/webhook")
+def verify_webhook(
+    hub_mode: str = None,
+    hub_challenge: str = None,
+    hub_verify_token: str = None
+):
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        return int(hub_challenge)
+    return {"error": "Verification failed"}
+
+# ===============================
+# WEBHOOK RECEIVER
+# ===============================
+@app.post("/webhook")
+async def whatsapp_webhook(request: Request):
+    data = await request.json()
+    print("INCOMING:", data)
+
+    try:
+        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        phone = message["from"]
+        text = message["text"]["body"]
+    except Exception as e:
+        print("ERROR:", e)
+        return {"status": "ignored"}
+
+    # SIMPLE TEXT REPLY (NO TEMPLATE)
+    send_text(phone, "👋 Hi! Grocery bot is working.")
+
+    return {"status": "ok"}
+
+    # ===============================
+    # BOT LOGIC (DEMO)
+    # ===============================
+    if text == "HI":
+        send_template(
+            phone,
+            "restaurant_welcome",
+            [RESTAURANT_NAME]
+        )
+
+    elif text == "MENU":
+        send_template(
+            phone,
+            "restaurant_menu",
+            ["Pizza"]
+        )
+
+    elif text.startswith("ITEM"):
+        item = text.replace("ITEM", "").strip()
+        send_template(
+            phone,
+            "restaurant_order_confirm",
+            [item]
+        )
+
+    elif text.startswith("ORDER"):
+        item = text.replace("ORDER", "").strip()
+        send_text(
+            phone,
+            f"✅ Your order for {item} is confirmed!\nThank you for ordering with {RESTAURANT_NAME} 🍕"
+        )
+
+    else:
+        send_text(
+            phone,
+            "Please reply:\nHI\nMENU\nITEM Pizza\nORDER Pizza"
+        )
+
+    return {"status": "ok"}
+
+# ===============================
+# SEND TEMPLATE MESSAGE
+# ===============================
+def send_template(to, template_name, variables):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": "en"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": v} for v in variables
+                    ]
+                }
+            ]
+        }
+    }
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    requests.post(url, headers=headers, json=payload)
+
+# ===============================
+# SEND NORMAL TEXT MESSAGE
+# ===============================
+def send_text(to, text):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    requests.post(url, headers=headers, json=payload)
