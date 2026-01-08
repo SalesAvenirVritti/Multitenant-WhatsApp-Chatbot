@@ -1,97 +1,84 @@
 from fastapi import FastAPI, Request
 import requests
 
-app = FastAPI(title="Restaurant WhatsApp Bot")
+app = FastAPI()
 
-# =====================================================
-# CONFIG – REPLACE THESE WITH REAL VALUES
-# =====================================================
+# ===============================
+# CONFIG (DO NOT CHANGE STRUCTURE)
+# ===============================
 WHATSAPP_TOKEN = "PASTE_YOUR_ACCESS_TOKEN_HERE"
-PHONE_NUMBER_ID = "PASTE_PHONE_NUMBER_ID_HERE"
+PHONE_NUMBER_ID = "958320700693461"
 VERIFY_TOKEN = "verify_123"
 
-RESTAURANT_NAME = "Food Plaza"
+RESTAURANT_NAME = "Jasper's Market"
 
-# =====================================================
+# ===============================
 # HEALTH CHECK
-# =====================================================
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# =====================================================
-# WEBHOOK VERIFICATION (META)
-# =====================================================
+# ===============================
+# WEBHOOK VERIFICATION
+# ===============================
 @app.get("/webhook")
 def verify_webhook(
     hub_mode: str = None,
     hub_challenge: str = None,
     hub_verify_token: str = None
 ):
-    print("✅ VERIFY HIT")
-
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         return int(hub_challenge)
-
     return {"error": "Verification failed"}
 
-# =====================================================
-# WEBHOOK RECEIVER (INCOMING MESSAGES)
-# =====================================================
+# ===============================
+# WEBHOOK RECEIVER
+# ===============================
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     data = await request.json()
-    print("🔥 INCOMING PAYLOAD:", data)
+    print("INCOMING:", data)
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        phone = message["from"]
-        text = message["text"]["body"].strip().upper()
-    except Exception as e:
-        print("❌ IGNORE:", e)
+        msg = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        phone = msg["from"]
+        text = msg["text"]["body"].strip().lower()
+    except Exception:
         return {"status": "ignored"}
 
-    # =================================================
-    # DEMO RESTAURANT LOGIC
-    # =================================================
-    if text == "HI":
+    # ---------------- DEMO LOGIC ----------------
+    if text in ["hi", "hello"]:
         send_text(
             phone,
-            f"👋 Welcome to {RESTAURANT_NAME}!\n\nReply:\nMENU"
+            f"👋 Welcome to {RESTAURANT_NAME}!\n\nReply:\nMENU – see menu\nORDER PIZZA – order item"
         )
 
-    elif text == "MENU":
+    elif text == "menu":
         send_text(
             phone,
-            "🍽 MENU\n1️⃣ Pizza\n2️⃣ Burger\n\nReply:\nITEM Pizza"
+            "🍕 MENU\n\n1. Pizza\n2. Burger\n3. Sandwich\n\nReply:\nORDER PIZZA"
         )
 
-    elif text.startswith("ITEM"):
-        item = text.replace("ITEM", "").strip()
+    elif text.startswith("order"):
+        item = text.replace("order", "").strip().title()
         send_text(
             phone,
-            f"👍 You selected *{item}*\n\nReply:\nORDER {item}"
-        )
-
-    elif text.startswith("ORDER"):
-        item = text.replace("ORDER", "").strip()
-        send_text(
-            phone,
-            f"✅ Order Confirmed!\n\n🍴 Item: {item}\n🏪 {RESTAURANT_NAME}\n\nThank you!"
+            f"✅ Your order for {item} is confirmed!\nThank you for choosing {RESTAURANT_NAME} 🙌"
         )
 
     else:
         send_text(
             phone,
-            "❓ Invalid input\n\nReply:\nHI\nMENU\nITEM Pizza\nORDER Pizza"
+            "❓ I didn’t understand.\nReply:\nHI\nMENU\nORDER PIZZA"
         )
 
     return {"status": "ok"}
 
-# =====================================================
-# SEND TEXT MESSAGE (SAFE FOR DEMO)
-# =====================================================
-def send_text(to: str, text: str):
+# ===============================
+# SEND TEXT MESSAGE
+# ===============================
+def send_text(to, text):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
     payload = {
@@ -107,37 +94,4 @@ def send_text(to: str, text: str):
     }
 
     r = requests.post(url, headers=headers, json=payload)
-    print("📤 SENT:", r.text)
-
-# =====================================================
-# OPTIONAL: TEMPLATE SENDER (USE LATER)
-# =====================================================
-"""
-def send_template(to, template_name, variables):
-    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
-
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": "en_US"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": v} for v in variables
-                    ]
-                }
-            ]
-        }
-    }
-
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    requests.post(url, headers=headers, json=payload)
-"""
+    print("SEND RESPONSE:", r.text)
