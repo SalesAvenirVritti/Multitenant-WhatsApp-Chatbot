@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi import Query
 import requests
 import os
 
@@ -21,14 +22,17 @@ def health():
 # ===============================
 # WEBHOOK VERIFY (META)
 # ===============================
+from fastapi import Query
+
 @app.get("/webhook")
 def verify(
-    hub_mode: str = None,
-    hub_challenge: str = None,
-    hub_verify_token: str = None,
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
 ):
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         return int(hub_challenge)
+
     return "Verification failed", 403
 
 # ===============================
