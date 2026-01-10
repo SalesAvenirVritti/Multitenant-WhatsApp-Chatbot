@@ -5,21 +5,21 @@ import os
 app = FastAPI()
 
 # ===============================
-# CONFIG
+# CONFIG (READ FROM ENV)
 # ===============================
-VERIFY_TOKEN = "verify_123"   # MUST MATCH META EXACTLY
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+VERIFY_TOKEN = "verify_123"
 
 # ===============================
-# HEALTH
+# HEALTH CHECK
 # ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 # ===============================
-# WEBHOOK VERIFICATION
+# META WEBHOOK VERIFICATION
 # ===============================
 @app.get("/webhook")
 def verify_webhook(
@@ -27,42 +27,39 @@ def verify_webhook(
     hub_challenge: str = None,
     hub_verify_token: str = None
 ):
-    print("VERIFY CALLED", hub_mode, hub_verify_token)
+    print("VERIFY TOKEN RECEIVED:", hub_verify_token)
 
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         return int(hub_challenge)
 
-    return "Verification failed"
+    return "Verification failed", 403
 
 # ===============================
-# WEBHOOK RECEIVER
+# WEBHOOK RECEIVER (WHATSAPP MSG)
 # ===============================
 @app.post("/webhook")
-async def webhook(request: Request):
+async def whatsapp_webhook(request: Request):
     data = await request.json()
-    print("INCOMING:", data)
+    print("INCOMING MESSAGE:", data)
 
     try:
         message = data["entry"][0]["changes"][0]["value"]["messages"][0]
         phone = message["from"]
-        text = message["text"]["body"].lower()
-    except:
+        text = message["text"]["body"].strip().lower()
+    except Exception as e:
+        print("IGNORE:", e)
         return {"status": "ignored"}
 
-    send_text(phone, "✅ BOT IS LIVE AND WORKING!")
+    # ✅ SIMPLE DEMO REPLY (GUARANTEED)
+    send_text(phone, "✅ Bot is LIVE! You said: " + text)
 
     return {"status": "ok"}
 
 # ===============================
-# SEND MESSAGE
+# SEND TEXT MESSAGE
 # ===============================
 def send_text(to, text):
-    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
-
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
     payload = {
         "messaging_product": "whatsapp",
@@ -71,5 +68,10 @@ def send_text(to, text):
         "text": {"body": text}
     }
 
-    r = requests.post(url, headers=headers, json=payload)
-    print("SEND:", r.text)
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+    print("SEND RESPONSE:", response.text)
