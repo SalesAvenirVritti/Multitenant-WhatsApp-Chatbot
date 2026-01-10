@@ -4,90 +4,81 @@ import os
 
 app = FastAPI()
 
-# ================= CONFIG =================
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN") or "PEAAcZAUrL1kAUBQWMOwhrzgDTgAPgtIqQGXyKWpmq0pGks0cgekZBthZAE3ZA8pZBaPRhN4u1BrLjR2JGCs904trjX4YwhbLXvFXpdLN3DU6WHr5DM778LRe6uiMpQZCPvMNFkvDFgZA5xWI34DyrC68mDi6a5rc1qSdhA3isVvhEKhzLvINREZC78ZCFbA4QHe4FhGlLYLFGgFhJaFOeXv5orKYpCrSZBILp28MHDoYEXyQYEuSuP1IUnn22jNOmZCS30LWZCycq1BZBussZB4sPepZBddyRIOekAZDZD"
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID") or "958320700693461"
+WHATSAPP_TOKEN = os.getenv("EAAcZAUrL1kAUBQWMOwhrzgDTgAPgtIqQGXyKWpmq0pGks0cgekZBthZAE3ZA8pZBaPRhN4u1BrLjR2JGCs904trjX4YwhbLXvFXpdLN3DU6WHr5DM778LRe6uiMpQZCPvMNFkvDFgZA5xWI34DyrC68mDi6a5rc1qSdhA3isVvhEKhzLvINREZC78ZCFbA4QHe4FhGlLYLFGgFhJaFOeXv5orKYpCrSZBILp28MHDoYEXyQYEuSuP1IUnn22jNOmZCS30LWZCycq1BZBussZB4sPepZBddyRIOekAZDZD")
+PHONE_NUMBER_ID = os.getenv("P58320700693461")
 VERIFY_TOKEN = "verify_123"
 
-BUSINESS_NAME = "Jasper's Market"
-
-# ================= HEALTH =================
+# --------------------
+# HEALTH CHECK
+# --------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# ================= WEBHOOK VERIFY =================
+# --------------------
+# WEBHOOK VERIFY
+# --------------------
 @app.get("/webhook")
-def verify_webhook(request: Request):
-    params = request.query_params
-    if (
-        params.get("hub.mode") == "subscribe"
-        and params.get("hub.verify_token") == VERIFY_TOKEN
-    ):
-        return int(params.get("hub.challenge"))
-    return "Verification failed", 403
+def verify_webhook(
+    hub_mode: str = None,
+    hub_challenge: str = None,
+    hub_verify_token: str = None,
+):
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        return int(hub_challenge)
+    return "Verification failed"
 
-# ================= WEBHOOK RECEIVE =================
+# --------------------
+# WEBHOOK RECEIVE
+# --------------------
 @app.post("/webhook")
-async def receive_message(request: Request):
+async def whatsapp_webhook(request: Request):
     data = await request.json()
-    print("📩 INCOMING:", data)
+    print("INCOMING:", data)
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        from_number = message["from"]
-        text = message["text"]["body"].strip().lower()
-    except Exception:
-        return {"status": "ignored"}
+        msg = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        phone = msg["from"]
+        text = msg["text"]["body"].strip().lower()
+    except Exception as e:
+        print("IGNORED:", e)
+        return "ignored"
 
-    # ===== BOT LOGIC =====
+    # --------------------
+    # SIMPLE DEMO LOGIC
+    # --------------------
     if text == "hi":
-        send_text(
-            from_number,
-            f"👋 Hi! Welcome to {BUSINESS_NAME}\nReply MENU to see items"
-        )
+        send_text(phone, "👋 Welcome to Jasper’s Market!\nReply MENU to see items")
 
     elif text == "menu":
-        send_text(
-            from_number,
-            "🛒 Available items:\n1️⃣ Fruits\n2️⃣ Vegetables\nReply ITEM <name>"
-        )
-
-    elif text.startswith("item"):
-        item = text.replace("item", "").strip()
-        send_text(
-            from_number,
-            f"👍 You selected {item}\nReply ORDER {item} to confirm"
-        )
+        send_text(phone, "🛒 Items:\n1️⃣ Apple\n2️⃣ Bread\nReply: ORDER Apple")
 
     elif text.startswith("order"):
         item = text.replace("order", "").strip()
-        send_text(
-            from_number,
-            f"✅ Order confirmed for {item}\nThank you!"
-        )
+        send_text(phone, f"✅ Order confirmed for {item}\nThank you!")
 
     else:
-        send_text(
-            from_number,
-            "❓ I didn’t understand.\nTry: HI, MENU, ITEM Apple"
-        )
+        send_text(phone, "Reply HI or MENU")
 
-    return {"status": "ok"}
+    return "ok"
 
-# ================= SEND TEXT =================
-def send_text(to, body):
+# --------------------
+# SEND TEXT
+# --------------------
+def send_text(to: str, text: str):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
+
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": body},
+        "text": {"body": text}
     }
 
-    r = requests.post(url, headers=headers, json=payload)
-    print("📤 SENT:", r.text)
+    res = requests.post(url, headers=headers, json=payload)
+    print("SEND RESULT:", res.text)
