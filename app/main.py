@@ -12,6 +12,7 @@ app = FastAPI()
 VERIFY_TOKEN = "verify_123"
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
 GRAPH_URL = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
 # ===============================
@@ -42,25 +43,36 @@ def verify_webhook(request: Request):
 @app.post("/webhook")
 async def receive_message(request: Request):
     data = await request.json()
-    print("INCOMING:", json.dumps(data, indent=2))
+    print("INCOMING MESSAGE:", json.dumps(data, indent=2))
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        value = data["entry"][0]["changes"][0]["value"]
+
+        # Ignore status updates
+        if "messages" not in value:
+            return {"status": "ignored"}
+
+        message = value["messages"][0]
         from_number = message["from"]
 
+        # ===============================
         # TEXT MESSAGE
+        # ===============================
         if message["type"] == "text":
             user_text = message["text"]["body"].lower().strip()
 
+            # 🔴 IMPORTANT: reply ONLY on HI (template-first rule)
             if user_text in ["hi", "hello", "hey"]:
-                send_restaurant_menu(from_number)
+                send_restaurant_template(from_number)
             else:
-                send_text(from_number, "Please type *Hi* to see menu 🍽️")
+                print("Ignored text (template not triggered yet)")
 
-        # BUTTON REPLY
+        # ===============================
+        # BUTTON CLICK (TEMPLATE RESPONSE)
+        # ===============================
         elif message["type"] == "interactive":
             button_id = message["interactive"]["button_reply"]["id"]
-            handle_button_reply(from_number, button_id)
+            handle_button_click(from_number, button_id)
 
     except Exception as e:
         print("ERROR:", e)
@@ -68,7 +80,7 @@ async def receive_message(request: Request):
     return {"status": "ok"}
 
 # ===============================
-# SEND TEXT MESSAGE
+# SEND TEXT
 # ===============================
 def send_text(to, text):
     payload = {
@@ -86,9 +98,9 @@ def send_text(to, text):
     requests.post(GRAPH_URL, headers=headers, json=payload)
 
 # ===============================
-# SEND RESTAURANT WELCOME MENU
+# SEND RESTAURANT TEMPLATE (LIKE HDFC)
 # ===============================
-def send_restaurant_menu(to):
+def send_restaurant_template(to):
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -97,8 +109,8 @@ def send_restaurant_menu(to):
             "type": "button",
             "body": {
                 "text": (
-                    "👋 *Welcome to Foodie Hub!*\n\n"
-                    "Simply select from the options below or type your query to get started 🍕"
+                    "👋 *Welcome to Spice Villa Restaurant!*\n\n"
+                    "Simply select from the options below or type your query to get started 🍽️"
                 )
             },
             "action": {
@@ -106,22 +118,22 @@ def send_restaurant_menu(to):
                     {
                         "type": "reply",
                         "reply": {
-                            "id": "VIEW_MENU",
+                            "id": "MENU",
                             "title": "📖 View Menu"
                         }
                     },
                     {
                         "type": "reply",
                         "reply": {
-                            "id": "PLACE_ORDER",
+                            "id": "ORDER",
                             "title": "🛒 Place Order"
                         }
                     },
                     {
                         "type": "reply",
                         "reply": {
-                            "id": "LOCATION",
-                            "title": "📍 Location"
+                            "id": "CONTACT",
+                            "title": "📞 Contact Us"
                         }
                     }
                 ]
@@ -137,23 +149,23 @@ def send_restaurant_menu(to):
     requests.post(GRAPH_URL, headers=headers, json=payload)
 
 # ===============================
-# HANDLE BUTTON CLICKS
+# HANDLE TEMPLATE BUTTONS
 # ===============================
-def handle_button_reply(to, button_id):
-    if button_id == "VIEW_MENU":
+def handle_button_click(to, button_id):
+    if button_id == "MENU":
         send_text(
             to,
-            "🍽️ *Our Menu*\n\n1️⃣ Pizza\n2️⃣ Burger\n3️⃣ Pasta\n\nReply with item name to order."
+            "🍽️ *Today’s Menu*\n\n• Paneer Butter Masala\n• Chicken Biryani\n• Veg Pizza"
         )
 
-    elif button_id == "PLACE_ORDER":
+    elif button_id == "ORDER":
         send_text(
             to,
-            "🛒 Please type the item name you want to order.\nExample: *Pizza*"
+            "🛒 Please reply with the item name you want to order.\nExample: *Veg Pizza*"
         )
 
-    elif button_id == "LOCATION":
+    elif button_id == "CONTACT":
         send_text(
             to,
-            "📍 *Foodie Hub*\nMG Road, Pune\n⏰ 10 AM – 11 PM"
+            "📞 *Spice Villa Restaurant*\nCall: +91 9XXXXXXXXX\n⏰ 10 AM – 11 PM"
         )
