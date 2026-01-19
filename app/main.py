@@ -1,66 +1,66 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 import requests
 import os
+import json
 
 app = FastAPI()
 
+# ===============================
+# CONFIG
+# ===============================
+VERIFY_TOKEN = "verify_123"
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-VERIFY_TOKEN = "verify_123"
 
-# --------------------
-# Health Check
-# --------------------
+# ===============================
+# HEALTH CHECK
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# --------------------
-# Webhook Verification
-# --------------------
-@app.get("/webhook")
-def verify_webhook(
-    hub_mode: str = None,
-    hub_challenge: str = None,
-    hub_verify_token: str = None
-):
-    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
-        return int(hub_challenge)
-    return {"error": "Verification failed"}
+# ===============================
+# META WEBHOOK VERIFICATION
+# ===============================
+@app.get("/webhook", response_class=PlainTextResponse)
+def verify_webhook(request: Request):
+    params = request.query_params
 
-# --------------------
-# Webhook Receiver
-# --------------------
+    hub_mode = params.get("hub.mode")
+    hub_verify_token = params.get("hub.verify_token")
+    hub_challenge = params.get("hub.challenge")
+
+    print("VERIFY REQUEST:", params)
+
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        return hub_challenge  # MUST be plain text
+
+    return PlainTextResponse("Verification failed", status_code=403)
+
+# ===============================
+# WHATSAPP MESSAGE RECEIVER
+# ===============================
 @app.post("/webhook")
 async def receive_message(request: Request):
     data = await request.json()
-    print("INCOMING:", data)
+    print("INCOMING MESSAGE:", json.dumps(data))
 
     try:
         message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        sender = message["from"]
-        text = message["text"]["body"].strip().upper()
-    except Exception:
-        return {"status": "ignored"}
+        from_number = message["from"]
+        text = message["text"]["body"]
 
-    if text == "HI":
-        send_text(sender, "👋 Hi! Welcome to Jasper’s Market.\nReply MENU to see items.")
+        send_text(from_number, f"👋 Bot is LIVE! You said: {text}")
 
-    elif text == "MENU":
-        send_text(sender, "🛒 Available Items:\n1️⃣ Apples\n2️⃣ Milk\nReply ORDER <item>")
-
-    elif text.startswith("ORDER"):
-        item = text.replace("ORDER", "").strip()
-        send_text(sender, f"✅ Order confirmed for {item}.\nThank you!")
-
-    else:
-        send_text(sender, "Please reply:\nHI\nMENU\nORDER Apples")
+    except Exception as e:
+        print("ERROR:", e)
 
     return {"status": "ok"}
 
-# --------------------
-# Send Text
-# --------------------
+# ===============================
+# SEND TEXT MESSAGE
+# ===============================
 def send_text(to, text):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
@@ -77,4 +77,4 @@ def send_text(to, text):
     }
 
     r = requests.post(url, headers=headers, json=payload)
-    print("SEND:", r.text)
+    print("SEND RESPONSE:", r.text)
