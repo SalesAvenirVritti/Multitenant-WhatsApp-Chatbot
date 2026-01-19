@@ -1,74 +1,90 @@
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request
 import requests
 import os
 
 app = FastAPI()
 
-# =====================
-# CONFIG
-# =====================
+# ===============================
+# CONFIG (ENV FROM systemd)
+# ===============================
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 VERIFY_TOKEN = "verify_123"
 
-# =====================
-# HEALTH
-# =====================
+# ===============================
+# HEALTH CHECK
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# =====================
-# WEBHOOK VERIFY (FIXED)
-# =====================
+# ===============================
+# WEBHOOK VERIFICATION (META)
+# ===============================
 @app.get("/webhook")
 def verify_webhook(
-    hub_mode: str = Query(None, alias="hub.mode"),
-    hub_challenge: int = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    hub_mode: str = None,
+    hub_challenge: str = None,
+    hub_verify_token: str = None
 ):
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
-        return hub_challenge
-    return "Verification failed", 403
+        return int(hub_challenge)
+    return ("Verification failed", 403)
 
-# =====================
-# WEBHOOK RECEIVE
-# =====================
+# ===============================
+# WEBHOOK RECEIVER
+# ===============================
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     data = await request.json()
     print("INCOMING:", data)
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        phone = message["from"]
-        text = message["text"]["body"]
+        msg = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        phone = msg["from"]
+        text = msg["text"]["body"].strip().lower()
     except Exception as e:
-        print("IGNORE:", e)
+        print("IGNORED:", e)
         return {"status": "ignored"}
 
-    reply_text = f"✅ BOT WORKING!\nYou said: {text}"
+    # 🔥 ALWAYS USE TEMPLATE (DEMO SAFE)
+    if text == "hi":
+        send_template(
+            phone,
+            "restaurant_welcome",   # EXACT TEMPLATE NAME
+            ["Jasper's Market"]
+        )
 
-    send_text(phone, reply_text)
     return {"status": "ok"}
 
-# =====================
-# SEND TEXT MESSAGE
-# =====================
-def send_text(to, text):
+# ===============================
+# SEND TEMPLATE MESSAGE
+# ===============================
+def send_template(to, template_name, variables):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": "en_US"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": v} for v in variables
+                    ]
+                }
+            ]
+        }
+    }
 
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": text}
-    }
-
-    res = requests.post(url, headers=headers, json=payload)
-    print("SEND STATUS:", res.text)
+    r = requests.post(url, headers=headers, json=payload)
+    print("META RESPONSE:", r.text)
