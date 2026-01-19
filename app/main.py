@@ -40,22 +40,20 @@ async def whatsapp_webhook(request: Request):
     print("INCOMING:", data)
 
     try:
-        msg = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        phone = msg["from"]
-        text = msg["text"]["body"].strip().lower()
-    except Exception as e:
-        print("IGNORED:", e)
-        return {"status": "ignored"}
+        entry = data["entry"][0]
+        change = entry["changes"][0]
+        value = change["value"]
 
-    # 🔥 ALWAYS USE TEMPLATE (DEMO SAFE)
-    if text == "hi":
-        send_template(
-            phone,
-            "restaurant_welcome",   # EXACT TEMPLATE NAME
-            ["Jasper's Market"]
-        )
+        # Ignore status updates
+        if "messages" not in value:
+            return {"status": "no_message"}
 
-    return {"status": "ok"}
+        message = value["messages"][0]
+        phone = message["from"]
+        text = message.get("text", {}).get("body", "").strip().lower()
+
+   
+
 
 # ===============================
 # SEND TEMPLATE MESSAGE
