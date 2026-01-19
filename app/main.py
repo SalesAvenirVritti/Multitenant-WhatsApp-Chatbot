@@ -42,6 +42,11 @@ def verify_webhook(request: Request):
 # ===============================
 @app.post("/webhook")
 async def receive_message(request: Request):
+    print("🔥 WEBHOOK HIT 🔥")
+    data = await request.json()
+    print("INCOMING MESSAGE:", json.dumps(data, indent=2))
+
+async def receive_message(request: Request):
     data = await request.json()
     print("INCOMING MESSAGE:", json.dumps(data, indent=2))
 
