@@ -6,9 +6,9 @@ import os
 
 app = FastAPI()
 
-# =========================
+# ===============================
 # CONFIG
-# =========================
+# ===============================
 VERIFY_TOKEN = "verify_123"
 
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
@@ -16,16 +16,16 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 GRAPH_URL = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
-# =========================
+# ===============================
 # HEALTH
-# =========================
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# =========================
+# ===============================
 # WEBHOOK VERIFY (GET)
-# =========================
+# ===============================
 @app.get("/webhook", response_class=PlainTextResponse)
 async def verify_webhook(request: Request):
     params = request.query_params
@@ -38,9 +38,9 @@ async def verify_webhook(request: Request):
 
     return PlainTextResponse("Verification failed", status_code=403)
 
-# =========================
+# ===============================
 # WEBHOOK RECEIVE (POST)
-# =========================
+# ===============================
 @app.post("/webhook")
 async def receive_webhook(request: Request):
     print("🔥 META WEBHOOK HIT 🔥")
@@ -75,9 +75,9 @@ async def receive_webhook(request: Request):
 
     return {"status": "ok"}
 
-# =========================
-# SEND TEXT TO WHATSAPP
-# =========================
+# ===============================
+# SEND MESSAGE
+# ===============================
 def send_text(to, text):
     payload = {
         "messaging_product": "whatsapp",
